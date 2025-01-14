@@ -3,12 +3,13 @@ const router = require('express').Router()
 const jwt = require('jsonwebtoken')
 const { SECRET } = require('../util/config')
 
-const { Blog, User } = require('../models')
+const { Blog, User } = require('../models') 
+const Session = require('../models/session')
 
 const { Op } = require('sequelize')
 const { sequelize } = require('../util/db')
 
-const tokenExtractor = (req, res, next) => {
+/*const tokenExtractor = (req, res, next) => {
   const authorization = req.get('authorization')
   if (authorization && authorization.toLowerCase().startsWith('bearer ')) {
     try {
@@ -21,6 +22,40 @@ const tokenExtractor = (req, res, next) => {
   } else {
     return res.status(401).json({ error: 'token missing' })
   }
+  next()
+}*/
+
+const tokenExtractor = async (req, res, next) => {
+  const authorization = req.get('authorization')
+
+  if (authorization && authorization.toLowerCase().startsWith('bearer ')) {
+    const token = authorization.substring(7)
+
+    try {
+      const decodedToken = jwt.verify(token, process.env.SECRET)
+      console.log('Token decoded:', decodedToken)
+
+      const session = await Session.findOne({ where: { token } })
+      if (!session) {
+        return res.status(401).json({ error: 'Session invalid or expired' })
+      }
+
+      const user = await User.findByPk(decodedToken.id)
+      if (!user || user.disabled) {
+        return res.status(401).json({ error: 'User disabled or not found' })
+      }
+
+      req.user = user
+      req.session = session
+      req.decodedToken = decodedToken
+    } catch (error) {
+      console.error('Token verification error:', error)
+      return res.status(401).json({ error: 'Token invalid' })
+    }
+  } else {
+    return res.status(401).json({ error: 'Token missing' })
+  }
+
   next()
 }
 
